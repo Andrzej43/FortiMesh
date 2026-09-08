@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MechaRoyale</title>
+<style>
+  :root{
+    --bg:#0a0e14;
+    --panel:#11161f;
+    --accent:#3ddc97;
+    --accent2:#ff5470;
+    --text:#dfe7f0;
+    --muted:#6b7688;
+    --storm:#ff5470;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%; overflow:hidden;
+    background:var(--bg); color:var(--text);
+    font-family:'Segoe UI', Roboto, Arial, sans-serif;
+  }
+  #wrap{ position:relative; width:100vw; height:100vh; }
+  canvas{ display:block; background:#0d1420; }
+
+  #hud{
+    position:absolute; top:0; left:0; right:0; padding:14px 18px;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    pointer-events:none; z-index:10;
+  }
+  .hud-box{
+    background:rgba(17,22,31,0.78); border:1px solid #223047;
+    border-radius:10px; padding:10px 14px; backdrop-filter: blur(4px);
+  }
+  #stats{ min-width:220px; }
+  .bar-row{ display:flex; align-items:center; gap:8px; margin:4px 0; font-size:13px;}
+  .bar{ flex:1; height:10px; border-radius:5px; background:#1e2836; overflow:hidden; border:1px solid #2c3a52;}
+  .bar-fill{ height:100%; border-radius:5px; transition:width .15s ease; }
+  #hpFill{ background:linear-gradient(90deg,#3ddc97,#2bb673); }
+  #heatFill{ background:linear-gradient(90deg,#ffb020,#ff5470); }
+  #ammoFill{ background:linear-gradient(90deg,#4da3ff,#3ddc97); }
+  #killfeed{
+    position:absolute; top:14px; right:18px; width:240px; z-index:10;
+    display:flex; flex-direction:column; gap:6px; pointer-events:none;
+    align-items:flex-end;
+  }
+  .kf-item{
+    background:rgba(17,22,31,0.85); border:1px solid #223047; border-left:3px solid var(--accent2);
+    padding:6px 10px; border-radius:6px; font-size:12px; opacity:0; animation:fadeInOut 4.5s ease forwards;
+  }
+  @keyframes fadeInOut{
+    0%{opacity:0; transform:translateX(10px);}
+    10%{opacity:1; transform:translateX(0);}
+    85%{opacity:1;}
+    100%{opacity:0;}
+  }
+  #center-msg{
+    position:absolute; top:40%; left:50%; transform:translate(-50%,-50%);
+    text-align:center; z-index:20; pointer-events:none;
+  }
+  #center-msg h1{
+    font-size:52px; margin:0; letter-spacing:3px;
+    text-shadow:0 0 20px rgba(61,220,151,0.6);
+  }
+  #center-msg p{ color:var(--muted); font-size:16px; margin-top:8px;}
+  #bottom-bar{
+    position:absolute; bottom:0; left:0; right:0; padding:12px 18px;
+    display:flex; justify-content:space-between; align-items:flex-end; z-index:10; pointer-events:none;
+  }
+  #minimap{
+    width:150px; height:150px; border-radius:10px; border:1px solid #223047;
+    background:rgba(17,22,31,0.78);
+  }
+  #alive-count{ font-size:13px; color:var(--muted); }
+  #alive-count b{ color:var(--accent); font-size:20px; }
+  #zone-warn{
+    font-size:12px; color:var(--storm); font-weight:600; margin-top:4px; display:none;
+  }
+  #startScreen, #gameOverScreen{
+    position:absolute; inset:0; background:radial-gradient(circle at 50% 40%, #131b28, #06090e 70%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:30; text-align:center;
+  }
+  #startScreen h1, #gameOverScreen h1{
+    font-size:64px; margin:0; letter-spacing:6px; color:var(--accent);
+    text-shadow:0 0 30px rgba(61,220,151,.5);
+  }
+  #startScreen .sub, #gameOverScreen .sub{ color:var(--muted); margin:10px 0 30px; font-size:15px; max-width:420px;}
+  button.play-btn{
+    background:var(--accent); color:#06110c; border:none; padding:14px 36px;
+    font-size:18px; font-weight:700; border-radius:8px; cursor:pointer; letter-spacing:1px;
+    transition:transform .1s ease, box-shadow .2s ease;
+    box-shadow:0 0 20px rgba(61,220,151,.35);
+  }
+  button.play-btn:hover{ transform:translateY(-2px); box-shadow:0 0 30px rgba(61,220,151,.55); }
+  #controls-hint{
+    margin-top:26px; font-size:12px; color:var(--muted); display:flex; gap:18px; flex-wrap:wrap; justify-content:center; max-width:520px;
+  }
+  #controls-hint span{ background:#141c29; border:1px solid #223047; padding:4px 10px; border-radius:6px;}
+  .hidden{ display:none !important; }
+  #gameOverScreen .result{ font-size:22px; margin-bottom:6px; }
+  #gameOverScreen .result.win{ color:var(--accent); }
+  #gameOverScreen .result.lose{ color:var(--accent2); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div id="stats" class="hud-box">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;">PLAYER MECH</div>
+      <div class="bar-row"><span>HP</span><div class="bar"><div id="hpFill" class="bar-fill" style="width:100%;"></div></div></div>
+      <div class="bar-row"><span>HEAT</span><div class="bar"><div id="heatFill" class="bar-fill" style="width:0%;"></div></div></div>
+      <div class="bar-row"><span>AMMO</span><div class="bar"><div id="ammoFill" class="bar-fill" style="width:100%;"></div></div></div>
+    </div>
+    <div id="killfeed"></div>
+  </div>
+
+  <div id="center-msg"></div>
+
+  <div id="bottom-bar">
+    <div>
+      <canvas id="minimap" width="150" height="150"></canvas>
+    </div>
+    <div style="text-align:right;">
+      <div id="alive-count">MECHS ALIVE: <b id="aliveNum">16</b></div>
+      <div id="zone-warn">⚠ OUTSIDE STORM FIELD — TAKING DAMAGE</div>
+    </div>
+  </div>
+
+  <div id="startScreen">
+    <h1>MECHA<span style="color:var(--text)">ROYALE</span></h1>
+    <div class="sub">Sixteen mechs drop into the arena. One walks out. Scavenge weapons, manage your heat, and survive the closing storm field.</div>
+    <button class="play-btn" id="playBtn">DEPLOY MECH</button>
+    <div id="controls-hint">
+      <span>WASD — Move</span>
+      <span>Mouse — Aim</span>
+      <span>Click / Space — Fire</span>
+      <span>Shift — Overdrive Thrust</span>
+      <span>R — Reload</span>
+    </div>
+  </div>
+
+  <div id="gameOverScreen" class="hidden">
+    <div class="result" id="resultText"></div>
+    <h1 id="gameOverTitle">DEFEATED</h1>
+    <div class="sub" id="gameOverSub"></div>
+    <button class="play-btn" id="restartBtn">DEPLOY AGAIN</button>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================ SETUP ============================ */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const minimap = document.getElementById('minimap');
+const mctx = minimap.getContext('2d');
+
+function resize(){
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const WORLD_SIZE = 3000;
+const MAX_MECHS = 16;
+
+const startScreen = document.getElementById('startScreen');
+const gameOverScreen = document.getElementById('gameOverScreen');
+const playBtn = document.getElementById('playBtn');
+const restartBtn = document.getElementById('restartBtn');
+const killfeedEl = document.getElementById('killfeed');
+const aliveNumEl = document.getElementById('aliveNum');
+const zoneWarnEl = document.getElementById('zone-warn');
+const centerMsgEl = document.getElementById('center-msg');
+
+const hpFill = document.getElementById('hpFill');
+const heatFill = document.getElementById('heatFill');
+const ammoFill = document.getElementById('ammoFill');
+
+/* ============================ UTIL ============================ */
+function rand(a,b){ return a + Math.random()*(b-a); }
+function dist(ax,ay,bx,by){ return Math.hypot(ax-bx, ay-by); }
+function clamp(v,min,max){ return Math.max(min, Math.min(max,v)); }
+function angleTo(ax,ay,bx,by){ return Math.atan2(by-ay, bx-ax); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+
+const NAMES = ["Vanguard","Ironclad","Hellrazor","Wraith","Juggernaut","Talon",
+  "Basilisk","Ravager","Sentinel","Cobalt","Nightfall","Marauder","Vulcan",
+  "Warden","Cyclone","Reaper","Titanfall","Widowmaker","Ashbringer","Fenrir"];
+function pickName(used){
+  let n; let tries=0;
+  do{ n = NAMES[Math.floor(Math.random()*NAMES.length)]; tries++; }
+  while(used.has(n) && tries<50);
+  used.add(n);
+  return n;
+}
+
+/* ============================ WEAPONS ============================ */
+const WEAPON_TYPES = {
+  autocannon: { name:"Autocannon", dmg:8,  rate:120, spread:0.05, speed:14, heat:6,  ammoMax:60, color:"#4da3ff" },
+  shotgun:    { name:"Scatter Gun", dmg:6,  rate:520, spread:0.28, speed:12, heat:14, ammoMax:24, pellets:6, color:"#ffb020" },
+  railgun:    { name:"Railgun",     dmg:34, rate:850, spread:0.01, speed:26, heat:26, ammoMax:10, color:"#ff5470" },
+  missiles:   { name:"Missile Pod", dmg:22, rate:650, spread:0.12, speed:9,  heat:20, ammoMax:16, homing:true, color:"#3ddc97" }
+};
+const WEAPON_KEYS = Object.keys(WEAPON_TYPES);
+
+/* ============================ ENTITIES ============================ */
+class Mech{
+  constructor(x,y,isPlayer,name){
+    this.x=x; this.y=y;
+    this.isPlayer = isPlayer;
+    this.name = name;
+    this.hp = 100; this.maxHp = 100;
+    this.heat = 0; this.maxHeat = 100;
+    this.overheated = false;
+    this.angle = 0;
+    this.speed = isPlayer ? 3.1 : rand(2.4,2.9);
+    this.radius = 20;
+    this.weaponKey = "autocannon";
+    this.ammo = { autocannon: WEAPON_TYPES.autocannon.ammoMax };
+    this.fireTimer = 0;
+    this.alive = true;
+    this.hue = isPlayer ? 150 : Math.floor(rand(0,360));
+    this.reloadTimer = 0;
+    this.reloading = false;
+    this.thrustCd = 0;
+    this.aiState = "roam";
+    this.aiTarget = null;
+    this.aiTimer = rand(0,2);
+    this.kills = 0;
+    this.hitFlash = 0;
+    this.legAngle = 0;
+    this.moveDir = {x:0,y:0};
+  }
+  weapon(){ return WEAPON_TYPES[this.weaponKey]; }
+  ammoCount(){ return this.ammo[this.weaponKey] || 0; }
+  pickupWeapon(key){
+    this.weaponKey = key;
+    if(this.ammo[key]===undefined) this.ammo[key] = WEAPON_TYPES[key].ammoMax;
+    else this.ammo[key] = Math.min(WEAPON_TYPES[key].ammoMax, this.ammo[key] + Math.floor(WEAPON_TYPES[key].ammoMax*0.5));
+  }
+  takeDamage(dmg){
+    this.hp -= dmg;
+    this.hitFlash = 1;
+    if(this.hp<=0 && this.alive){
+      this.alive=false;
+      this.hp=0;
+      return true;
+    }
+    return false;
+  }
+}
+
+class Bullet{
+  constructor(x,y,angle,speed,dmg,owner,color,homing,pellet){
+    this.x=x; this.y=y; this.angle=angle;
+    this.vx = Math.cos(angle)*speed;
+    this.vy = Math.sin(angle)*speed;
+    this.dmg = dmg; this.owner = owner; this.color=color||"#fff";
+    this.life = 90; this.homing = homing; this.speed=speed;
+    this.trail=[];
+    this.pellet = !!pellet;
+  }
+}
+
+class Pickup{
+  constructor(x,y,type,key){
+    this.x=x; this.y=y; this.type=type; // 'weapon' | 'health' | 'ammo'
+    this.key=key; this.bob = Math.random()*10;
+    this.alive = true;
+  }
+}
+
+class Particle{
+  constructor(x,y,vx,vy,life,color,size){
+    this.x=x;this.y=y;this.vx=vx;this.vy=vy;this.life=life;this.maxLife=life;this.color=color;this.size=size||3;
+  }
+}
+
+/* ============================ GAME STATE ============================ */
+let mechs = [];
+let bullets = [];
+let pickups = [];
+let particles = [];
+let player = null;
+let camera = {x:0,y:0};
+let zoneRadius = WORLD_SIZE*0.75;
+let zoneTargetRadius = WORLD_SIZE*0.75;
+let zoneCenter = {x:0,y:0};
+let zoneCenterTarget = {x:0,y:0};
+let zoneTimer = 0;
+let zonePhase = 0;
+let gameActive = false;
+let gameTime = 0;
+let keys = {};
+let mouse = {x:0,y:0,down:false};
+let usedNames = new Set();
+
+function resetGame(){
+  mechs=[]; bullets=[]; pickups=[]; particles=[];
+  usedNames = new Set();
+  zoneRadius = WORLD_SIZE*0.9;
+  zoneTargetRadius = WORLD_SIZE*0.55;
+  zoneCenter = {x:0,y:0};
+  zoneCenterTarget = {x:rand(-300,300), y:rand(-300,300)};
+  zoneTimer = 0;
+  zonePhase = 0;
+  gameTime = 0;
+
+  usedNames.add("YOU");
+  player = new Mech(rand(-600,600), rand(-600,600), true, "YOU");
+  mechs.push(player);
+
+  for(let i=0;i<MAX_MECHS-1;i++){
+    const a = Math.random()*Math.PI*2;
+    const r = rand(400,1300);
+    const m = new Mech(Math.cos(a)*r, Math.sin(a)*r, false, pickName(usedNames));
+    mechs.push(m);
+  }
+
+  // scatter pickups
+  for(let i=0;i<40;i++){
+    const a = Math.random()*Math.PI*2;
+    const r = rand(50,WORLD_SIZE*0.85);
+    const roll = Math.random();
+    if(roll<0.55){
+      pickups.push(new Pickup(Math.cos(a)*r, Math.sin(a)*r, 'weapon', WEAPON_KEYS[Math.floor(Math.random()*WEAPON_KEYS.length)]));
+    } else if(roll<0.8){
+      pickups.push(new Pickup(Math.cos(a)*r, Math.sin(a)*r, 'health', null));
+    } else {
+      pickups.push(new Pickup(Math.cos(a)*r, Math.sin(a)*r, 'ammo', null));
+    }
+  }
+}
+
+/* ============================ INPUT ============================ */
+window.addEventListener('keydown', e=>{
+  keys[e.key.toLowerCase()]=true;
+  if(e.key===' ') e.preventDefault();
+  if(e.key.toLowerCase()==='r') tryReload();
+});
+window.addEventListener('keyup', e=> keys[e.key.toLowerCase()]=false );
+canvas.addEventListener('mousemove', e=>{ mouse.x=e.clientX; mouse.y=e.clientY; });
+canvas.addEventListener('mousedown', ()=> mouse.down=true );
+window.addEventListener('mouseup', ()=> mouse.down=false );
+
+function tryReload(){
+  if(!player || !player.alive) return;
+  const w = player.weapon();
+  if(player.ammo[player.weaponKey] < w.ammoMax && !player.reloading){
+    player.reloading = true;
+    player.reloadTimer = 1200;
+  }
+}
+
+/* ============================ COMBAT ============================ */
+function fireWeapon(mech, targetAngle){
+  const w = mech.weapon();
+  if(mech.reloading) return;
+  if(mech.fireTimer>0) return;
+  if((mech.ammo[mech.weaponKey]||0) <= 0){ 
+    if(mech.isPlayer) tryReload(); 
+    else { mech.weaponKey='autocannon'; if(mech.ammo.autocannon===undefined) mech.ammo.autocannon=WEAPON_TYPES.autocannon.ammoMax; }
+    return; 
+  }
+  if(mech.heat >= mech.maxHeat){ mech.overheated = true; return; }
+
+  mech.ammo[mech.weaponKey]--;
+  mech.fireTimer = w.rate;
+  mech.heat = Math.min(mech.maxHeat, mech.heat + w.heat);
+  if(mech.heat>=mech.maxHeat) mech.overheated = true;
+
+  const count = w.pellets || 1;
+  for(let i=0;i<count;i++){
+    const spread = (Math.random()-0.5)*w.spread*(count>1?2.2:1);
+    const b = new Bullet(
+      mech.x + Math.cos(targetAngle)*mech.radius,
+      mech.y + Math.sin(targetAngle)*mech.radius,
+      targetAngle+spread, w.speed, w.dmg, mech, w.color, w.homing, count>1
+    );
+    bullets.push(b);
+  }
+  spawnMuzzleFlash(mech, targetAngle);
+}
+
+function spawnMuzzleFlash(mech, angle){
+  for(let i=0;i<4;i++){
+    particles.push(new Particle(
+      mech.x+Math.cos(angle)*mech.radius, mech.y+Math.sin(angle)*mech.radius,
+      Math.cos(angle)*rand(1,3)+rand(-1,1), Math.sin(angle)*rand(1,3)+rand(-1,1),
+      14, "#ffd27a", rand(2,4)
+    ));
+  }
+}
+
+function explosionFX(x,y,color,n){
+  for(let i=0;i<(n||14);i++){
+    const a = Math.random()*Math.PI*2;
+    particles.push(new Particle(x,y, Math.cos(a)*rand(1,5), Math.sin(a)*rand(1,5), rand(20,40), color||"#ff8a4c", rand(2,5)));
+  }
+}
+
+function killfeedMsg(text){
+  const el = document.createElement('div');
+  el.className='kf-item';
+  el.textContent = text;
+  killfeedEl.appendChild(el);
+  setTimeout(()=> el.remove(), 4600);
+}
+
+/* ============================ AI ============================ */
+function updateAI(mech, dt){
+  mech.aiTimer -= dt;
+  const distToCenter = dist(mech.x,mech.y,zoneCenter.x,zoneCenter.y);
+  const outside = distToCenter > zoneRadius - 40;
+
+  // find nearest visible enemy
+  let nearest=null, nd=Infinity;
+  for(const o of mechs){
+    if(o===mech || !o.alive) continue;
+    const d = dist(mech.x,mech.y,o.x,o.y);
+    if(d<nd){ nd=d; nearest=o; }
+  }
+
+  if(outside){
+    mech.aiState = 'toZone';
+  } else if(nearest && nd < 620){
+    mech.aiState = 'fight';
+    mech.aiTarget = nearest;
+  } else if(mech.aiTimer<=0){
+    mech.aiState = Math.random()<0.6 ? 'roam' : 'loot';
+    mech.aiTimer = rand(1.5,3.5);
+  }
+
+  let moveAngle = null;
+
+  if(mech.aiState==='toZone'){
+    moveAngle = angleTo(mech.x,mech.y,zoneCenter.x,zoneCenter.y);
+  } else if(mech.aiState==='fight' && nearest){
+    const d = dist(mech.x,mech.y,nearest.x,nearest.y);
+    const aimAngle = angleTo(mech.x,mech.y,nearest.x,nearest.y);
+    mech.angle = aimAngle;
+    if(d>320) moveAngle = aimAngle;
+    else if(d<160) moveAngle = aimAngle+Math.PI; // back off
+    else moveAngle = aimAngle + Math.PI/2 * (mech.hue%2===0?1:-1); // strafe
+    // line of sight-ish check simplified: just fire
+    fireWeapon(mech, aimAngle + rand(-0.03,0.03));
+  } else if(mech.aiState==='loot'){
+    if(!mech.aiTarget || !mech.aiTarget.alive === false){
+      let best=null, bd=Infinity;
+      for(const p of pickups){
+        if(!p.alive) continue;
+        const d = dist(mech.x,mech.y,p.x,p.y);
+        if(d<bd){ bd=d; best=p; }
+      }
+      mech.aiTarget = best;
+    }
+    if(mech.aiTarget && mech.aiTarget.alive){
+      moveAngle = angleTo(mech.x,mech.y,mech.aiTarget.x,mech.aiTarget.y);
+    } else {
+      mech.aiState='roam';
+    }
+  }
+
+  if(mech.aiState==='roam'){
+    if(!mech._roamAngle || Math.random()<0.01) mech._roamAngle = rand(0,Math.PI*2);
+    moveAngle = mech._roamAngle;
+  }
+
+  if(moveAngle!==null){
+    mech.x += Math.cos(moveAngle)*mech.speed;
+    mech.y += Math.sin(moveAngle)*mech.speed;
+    if(mech.aiState!=='fight') mech.angle = moveAngle;
+    mech.legAngle += 0.25;
+  }
+
+  // reload check
+  if((mech.ammo[mech.weaponKey]||0)<=0 && !mech.reloading){
+    mech.reloading = true; mech.reloadTimer = 900;
+  }
+}
+
+/* ============================ UPDATE ============================ */
+function updatePlayer(dt){
+  if(!player.alive) return;
+  let mx=0,my=0;
+  if(keys['w']) my-=1;
+  if(keys['s']) my+=1;
+  if(keys['a']) mx-=1;
+  if(keys['d']) mx+=1;
+  const mag = Math.hypot(mx,my);
+  let spd = player.speed;
+  if(keys['shift'] && player.thrustCd<=0 && mag>0){
+    spd *= 2.1;
+    player.thrustCd = 90;
+    for(let i=0;i<3;i++) particles.push(new Particle(player.x,player.y,rand(-2,2),rand(-2,2),20,"#3ddc97",3));
+  }
+  if(mag>0){
+    player.x += (mx/mag)*spd;
+    player.y += (my/mag)*spd;
+    player.legAngle += 0.3;
+  }
+  player.x = clamp(player.x, -WORLD_SIZE, WORLD_SIZE);
+  player.y = clamp(player.y, -WORLD_SIZE, WORLD_SIZE);
+
+  const worldMx = mouse.x - canvas.width/2 + camera.x;
+  const worldMy = mouse.y - canvas.height/2 + camera.y;
+  player.angle = angleTo(player.x,player.y,worldMx,worldMy);
+
+  if(mouse.down || keys[' ']){
+    fireWeapon(player, player.angle);
+  }
+}
+
+function updateMech(mech, dt){
+  if(!mech.alive) return;
+  if(mech.fireTimer>0) mech.fireTimer -= dt*1000;
+  if(mech.thrustCd>0) mech.thrustCd -= dt*1000;
+  if(mech.hitFlash>0) mech.hitFlash -= dt*3;
+
+  if(mech.reloading){
+    mech.reloadTimer -= dt*1000;
+    if(mech.reloadTimer<=0){
+      mech.reloading=false;
+      mech.ammo[mech.weaponKey] = mech.weapon().ammoMax;
+      mech.overheated = false;
+    }
+  }
+  if(!mech.reloading && mech.heat>0){
+    mech.heat = Math.max(0, mech.heat - dt*22);
+    if(mech.heat<mech.maxHeat*0.4) mech.overheated=false;
+  }
+
+  if(!mech.isPlayer){
+    updateAI(mech, dt);
+  }
+
+  // zone damage
+  const dc = dist(mech.x,mech.y,zoneCenter.x,zoneCenter.y);
+  if(dc > zoneRadius){
+    const dmg = 4*dt;
+    if(mech.takeDamage(dmg)){
+      handleDeath(mech, null);
+    }
+  }
+
+  // pickups
+  for(const p of pickups){
+    if(!p.alive) continue;
+    if(dist(mech.x,mech.y,p.x,p.y) < mech.radius+18){
+      p.alive = false;
+      if(p.type==='weapon'){
+        mech.pickupWeapon(p.key);
+        if(mech.isPlayer) killfeedMsg(`Picked up ${WEAPON_TYPES[p.key].name}`);
+      } else if(p.type==='health'){
+        mech.hp = Math.min(mech.maxHp, mech.hp+35);
+        if(mech.isPlayer) killfeedMsg("Repaired +35 HP");
+      } else if(p.type==='ammo'){
+        for(const k in mech.ammo) mech.ammo[k] = Math.min(WEAPON_TYPES[k].ammoMax, mech.ammo[k]+Math.floor(WEAPON_TYPES[k].ammoMax*0.4));
+        if(mech.isPlayer) killfeedMsg("Resupplied ammo");
+      }
+    }
+  }
+}
+
+function handleDeath(mech, killer){
+  explosionFX(mech.x, mech.y, "#ff8a4c", 30);
+  explosionFX(mech.x, mech.y, "#ffe27a", 16);
+  if(killer && killer.isPlayer){ killer.kills++; }
+  if(killer){
+    killfeedMsg(`${killer.name==='YOU'?'You':killer.name} eliminated ${mech.name==='YOU'?'You':mech.name}`);
+  } else {
+    killfeedMsg(`${mech.name==='YOU'?'You':mech.name} was consumed by the storm`);
+  }
+  // drop loot
+  if(Math.random()<0.7){
+    pickups.push(new Pickup(mech.x+rand(-20,20), mech.y+rand(-20,20), 'weapon', mech.weaponKey));
+  }
+  checkEndConditions();
+}
+
+function updateBullets(dt){
+  for(const b of bullets){
+    if(b.homing){
+      let target=null, td=Infinity;
+      for(const m of mechs){
+        if(m===b.owner || !m.alive) continue;
+        const d = dist(b.x,b.y,m.x,m.y);
+        if(d<td){ td=d; target=m; }
+      }
+      if(target && td<700){
+        const desired = angleTo(b.x,b.y,target.x,target.y);
+        let diff = desired - b.angle;
+        while(diff>Math.PI) diff-=Math.PI*2;
+        while(diff<-Math.PI) diff+=Math.PI*2;
+        b.angle += clamp(diff, -0.06,0.06);
+        b.vx = Math.cos(b.angle)*b.speed;
+        b.vy = Math.sin(b.angle)*b.speed;
+      }
+    }
+    b.x += b.vx; b.y += b.vy;
+    b.life--;
+    b.trail.push({x:b.x,y:b.y});
+    if(b.trail.length>5) b.trail.shift();
+
+    for(const m of mechs){
+      if(!m.alive || m===b.owner) continue;
+      if(dist(b.x,b.y,m.x,m.y) < m.radius){
+        const died = m.takeDamage(b.dmg);
+        explosionFX(b.x,b.y, b.color, 6);
+        b.life=0;
+        if(died) handleDeath(m, b.owner);
+        break;
+      }
+    }
+  }
+  bullets = bullets.filter(b=> b.life>0 && Math.abs(b.x)<WORLD_SIZE*1.3 && Math.abs(b.y)<WORLD_SIZE*1.3);
+}
+
+function updateParticles(dt){
+  for(const p of particles){
+    p.x+=p.vx; p.y+=p.vy;
+    p.vx*=0.94; p.vy*=0.94;
+    p.life--;
+  }
+  particles = particles.filter(p=>p.life>0);
+}
+
+function updateZone(dt){
+  zoneTimer += dt;
+  const phaseDuration = 22;
+  if(zoneTimer > phaseDuration){
+    zoneTimer = 0;
+    zonePhase++;
+    zoneTargetRadius = Math.max(120, zoneRadius*0.55);
+    zoneCenterTarget = {
+      x: clamp(zoneCenter.x + rand(-400,400), -WORLD_SIZE*0.4, WORLD_SIZE*0.4),
+      y: clamp(zoneCenter.y + rand(-400,400), -WORLD_SIZE*0.4, WORLD_SIZE*0.4)
+    };
+  }
+  zoneRadius = lerp(zoneRadius, zoneTargetRadius, dt*0.15);
+  zoneCenter.x = lerp(zoneCenter.x, zoneCenterTarget.x, dt*0.05);
+  zoneCenter.y = lerp(zoneCenter.y, zoneCenterTarget.y, dt*0.05);
+}
+
+let endTriggered = false;
+function checkEndConditions(){
+  if(endTriggered) return;
+  const aliveMechs = mechs.filter(m=>m.alive);
+  if(!player.alive){
+    endTriggered = true;
+    setTimeout(()=> endGame(false), 900);
+    return;
+  }
+  if(aliveMechs.length<=1 && player.alive){
+    endTriggered = true;
+    setTimeout(()=> endGame(true), 900);
+  }
+}
+
+/* ============================ RENDER ============================ */
+function worldToScreen(x,y){
+  return { x: x - camera.x + canvas.width/2, y: y - camera.y + canvas.height/2 };
+}
+
+function drawGrid(){
+  ctx.save();
+  ctx.strokeStyle = "rgba(60,80,110,0.15)";
+  ctx.lineWidth=1;
+  const step=100;
+  const startX = Math.floor((camera.x-canvas.width/2)/step)*step;
+  const startY = Math.floor((camera.y-canvas.height/2)/step)*step;
+  for(let x=startX; x<camera.x+canvas.width/2+step; x+=step){
+    const s = worldToScreen(x,0);
+    ctx.beginPath(); ctx.moveTo(s.x,0); ctx.lineTo(s.x,canvas.height); ctx.stroke();
+  }
+  for(let y=startY; y<camera.y+canvas.height/2+step; y+=step){
+    const s = worldToScreen(0,y);
+    ctx.beginPath(); ctx.moveTo(0,s.y); ctx.lineTo(canvas.width,s.y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawZone(){
+  const c = worldToScreen(zoneCenter.x, zoneCenter.y);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0,0,canvas.width,canvas.height);
+  ctx.arc(c.x,c.y,zoneRadius,0,Math.PI*2,true);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(255,84,112,0.10)";
+  ctx.fill("evenodd");
+
+  ctx.beginPath();
+  ctx.arc(c.x,c.y,zoneRadius,0,Math.PI*2);
+  ctx.strokeStyle = "#ff5470";
+  ctx.lineWidth=3;
+  ctx.shadowColor="#ff5470";
+  ctx.shadowBlur=15;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(c.x,c.y,zoneTargetRadius,0,Math.PI*2);
+  ctx.strokeStyle = "rgba(255,255,255,0.25)";
+  ctx.lineWidth=1;
+  ctx.setLineDash([6,8]);
+  ctx.shadowBlur=0;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawPickup(p){
+  const s = worldToScreen(p.x,p.y);
+  if(s.x<-30||s.x>canvas.width+30||s.y<-30||s.y>canvas.height+30) return;
+  const bob = Math.sin(gameTime*3 + p.bob)*4;
+  ctx.save();
+  ctx.translate(s.x, s.y+bob);
+  if(p.type==='weapon'){
+    ctx.fillStyle = WEAPON_TYPES[p.key].color;
+    ctx.shadowColor = WEAPON_TYPES[p.key].color; ctx.shadowBlur=12;
+    ctx.beginPath(); ctx.arc(0,0,10,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#0a0e14";
+    ctx.font="bold 10px Arial"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(p.key[0].toUpperCase(),0,0);
+  } else if(p.type==='health'){
+    ctx.fillStyle="#3ddc97"; ctx.shadowColor="#3ddc97"; ctx.shadowBlur=12;
+    ctx.fillRect(-8,-2,16,4); ctx.fillRect(-2,-8,4,16);
+  } else {
+    ctx.fillStyle="#ffb020"; ctx.shadowColor="#ffb020"; ctx.shadowBlur=12;
+    ctx.beginPath(); ctx.moveTo(-8,6); ctx.lineTo(0,-8); ctx.lineTo(8,6); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawMech(m){
+  const s = worldToScreen(m.x,m.y);
+  if(s.x<-60||s.x>canvas.width+60||s.y<-60||s.y>canvas.height+60) return;
+  ctx.save();
+  ctx.translate(s.x,s.y);
+
+  // shadow
+  ctx.beginPath();
+  ctx.ellipse(0,m.radius*0.7,m.radius*0.9,m.radius*0.35,0,0,Math.PI*2);
+  ctx.fillStyle="rgba(0,0,0,0.35)";
+  ctx.fill();
+
+  // legs
+  ctx.save();
+  ctx.rotate(m.angle);
+  ctx.fillStyle="#222b3a";
+  const legOffset = Math.sin(m.legAngle)*4;
+  ctx.fillRect(-6,-m.radius-4+legOffset,5,10);
+  ctx.fillRect(-6,m.radius-6-legOffset,5,10);
+  ctx.restore();
+
+  // body
+  const baseColor = m.isPlayer ? `hsl(150,70%,${45+m.hitFlash*30}%)` : `hsl(${m.hue},60%,${42+m.hitFlash*30}%)`;
+  ctx.beginPath();
+  ctx.arc(0,0,m.radius,0,Math.PI*2);
+  ctx.fillStyle = baseColor;
+  ctx.strokeStyle = "rgba(255,255,255,0.25)";
+  ctx.lineWidth=2;
+  ctx.fill(); ctx.stroke();
+
+  // cockpit glow
+  ctx.beginPath();
+  ctx.arc(0,0,m.radius*0.4,0,Math.PI*2);
+  ctx.fillStyle = m.isPlayer ? "#dfffef" : "#1a2230";
+  ctx.fill();
+
+  // gun barrel
+  ctx.save();
+  ctx.rotate(m.angle);
+  ctx.fillStyle = m.weapon().color;
+  ctx.fillRect(0,-3,m.radius+16,6);
+  ctx.restore();
+
+  // overheat sparks
+  if(m.overheated){
+    ctx.beginPath();
+    ctx.arc(0,0,m.radius+6,0,Math.PI*2);
+    ctx.strokeStyle="rgba(255,84,112,0.6)";
+    ctx.lineWidth=2;
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  // name + hp bar
+  ctx.save();
+  ctx.translate(s.x, s.y - m.radius - 18);
+  ctx.font="11px Arial";
+  ctx.textAlign="center";
+  ctx.fillStyle= m.isPlayer? "#3ddc97" : "#c7d2e0";
+  ctx.fillText(m.isPlayer? "YOU" : m.name, 0, -6);
+  const w=40;
+  ctx.fillStyle="#1e2836";
+  ctx.fillRect(-w/2,0,w,5);
+  ctx.fillStyle = m.hp>50? "#3ddc97" : m.hp>20? "#ffb020" : "#ff5470";
+  ctx.fillRect(-w/2,0,w*(m.hp/m.maxHp),5);
+  ctx.restore();
+}
+
+function drawBullet(b){
+  const s = worldToScreen(b.x,b.y);
+  if(s.x<-30||s.x>canvas.width+30||s.y<-30||s.y>canvas.height+30) return;
+  ctx.save();
+  for(let i=0;i<b.trail.length;i++){
+    const t = b.trail[i];
+    const ts = worldToScreen(t.x,t.y);
+    ctx.globalAlpha = (i/b.trail.length)*0.5;
+    ctx.beginPath();
+    ctx.arc(ts.x,ts.y, b.pellet?2:3,0,Math.PI*2);
+    ctx.fillStyle = b.color;
+    ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  ctx.beginPath();
+  ctx.arc(s.x,s.y, b.pellet?2.5:4,0,Math.PI*2);
+  ctx.fillStyle = b.color;
+  ctx.shadowColor = b.color; ctx.shadowBlur=10;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawParticle(p){
+  const s = worldToScreen(p.x,p.y);
+  ctx.save();
+  ctx.globalAlpha = clamp(p.life/p.maxLife,0,1);
+  ctx.beginPath();
+  ctx.arc(s.x,s.y,p.size,0,Math.PI*2);
+  ctx.fillStyle=p.color;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawMinimap(){
+  mctx.clearRect(0,0,150,150);
+  mctx.fillStyle="rgba(10,14,20,0.4)";
+  mctx.fillRect(0,0,150,150);
+  const scale = 150/(WORLD_SIZE*2.2);
+  const cx=75, cy=75;
+
+  mctx.beginPath();
+  mctx.arc(cx+zoneCenter.x*scale, cy+zoneCenter.y*scale, zoneRadius*scale, 0, Math.PI*2);
+  mctx.strokeStyle="#ff5470"; mctx.lineWidth=1.5; mctx.stroke();
+
+  for(const m of mechs){
+    if(!m.alive) continue;
+    mctx.beginPath();
+    mctx.arc(cx+m.x*scale, cy+m.y*scale, m.isPlayer?3:2, 0, Math.PI*2);
+    mctx.fillStyle = m.isPlayer? "#3ddc97" : "#ff8a8a";
+    mctx.fill();
+  }
+}
+
+function render(){
+  ctx.fillStyle="#0d1420";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  camera.x = lerp(camera.x, player.x, 0.12);
+  camera.y = lerp(camera.y, player.y, 0.12);
+
+  drawGrid();
+  drawZone();
+  for(const p of pickups) if(p.alive) drawPickup(p);
+  for(const b of bullets) drawBullet(b);
+  for(const m of mechs) if(m.alive) drawMech(m);
+  for(const p of particles) drawParticle(p);
+
+  drawMinimap();
+  updateHUD();
+}
+
+function updateHUD(){
+  hpFill.style.width = clamp(player.hp/player.maxHp*100,0,100)+'%';
+  heatFill.style.width = clamp(player.heat/player.maxHeat*100,0,100)+'%';
+  const w = player.weapon();
+  ammoFill.style.width = clamp((player.ammoCount()/w.ammoMax)*100,0,100)+'%';
+
+  const aliveMechs = mechs.filter(m=>m.alive).length;
+  aliveNumEl.textContent = aliveMechs;
+
+  const outside = dist(player.x,player.y,zoneCenter.x,zoneCenter.y) > zoneRadius;
+  zoneWarnEl.style.display = outside ? 'block' : 'none';
+}
+
+/* ============================ MAIN LOOP ============================ */
+let lastTime = performance.now();
+function loop(now){
+  const dt = Math.min(0.05, (now-lastTime)/1000);
+  lastTime = now;
+  if(gameActive){
+    gameTime += dt;
+    updatePlayer(dt);
+    for(const m of mechs) if(m!==player) updateMech(m, dt);
+    updateMech(player, dt);
+    updateBullets(dt);
+    updateParticles(dt);
+    updateZone(dt);
+    render();
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ============================ FLOW CONTROL ============================ */
+function startGame(){
+  resetGame();
+  endTriggered = false;
+  gameActive = true;
+  startScreen.classList.add('hidden');
+  gameOverScreen.classList.add('hidden');
+  killfeedEl.innerHTML='';
+  killfeedMsg("16 mechs deployed. Storm field active.");
+}
+
+function endGame(won){
+  gameActive = false;
+  const resultText = document.getElementById('resultText');
+  const title = document.getElementById('gameOverTitle');
+  const sub = document.getElementById('gameOverSub');
+  if(won){
+    resultText.textContent = "VICTORY";
+    resultText.className = "result win";
+    title.textContent = "CHAMPION MECH";
+    sub.textContent = `You outlasted ${MAX_MECHS-1} rival mechs with ${player.kills} confirmed kills.`;
+  } else {
+    resultText.textContent = "ELIMINATED";
+    resultText.className = "result lose";
+    title.textContent = "MECH DESTROYED";
+    const place = mechs.filter(m=>m.alive).length + 1;
+    sub.textContent = `You placed #${place} of ${MAX_MECHS} with ${player.kills} kill${player.kills===1?'':'s'}.`;
+  }
+  gameOverScreen.classList.remove('hidden');
+}
+
+playBtn.addEventListener('click', startGame);
+restartBtn.addEventListener('click', startGame);
+
+})();
+</script>
+</body>
+</html>
