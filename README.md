@@ -1,6 +1,6 @@
 # 🤖 MechaRoyale
 
-**Sixteen mechs drop into the arena. One walks out.**
+**100 mechs drop into the arena. One walks out.**
 
 MechaRoyale is a fast, browser-based battle royale where you pilot a mech against 15 AI-controlled rivals in a shrinking storm field. Scavenge weapons, manage your heat, and be the last mech standing — no build step, no install, just open a file and play.
 
